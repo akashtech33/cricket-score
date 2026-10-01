@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 1. Users collection:
+    // Anyone authenticated can read/write their own profile during signup
+    // Only Admin can modify roles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role);
+      allow delete: if isAdmin();
+    }
+
+    // 2. Matches & Subcollections:
+    // Audience: READ allowed, WRITE/DELETE denied
+    // Admin: READ & WRITE allowed
+    match /matches/{matchId} {
+      allow read: if true; // Public read for audience live scoring
+      allow write: if isAdmin();
+
+      // Subcollections: teams, players, innings, balls
+      match /teams/{teamId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+
+      match /players/{playerId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+
+      match /innings/{inningsId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+
+      match /balls/{ballId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+    }
+  }
+}
